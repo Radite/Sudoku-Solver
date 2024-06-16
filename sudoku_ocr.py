@@ -1,45 +1,66 @@
-# Import necessary libraries: OpenCV for image processing and Pytesseract for OCR (Optical Character Recognition).
 import cv2
+import numpy as np
 import pytesseract
 from pytesseract import Output
 
-# Define a function to extract Sudoku puzzle from a given image path.
+# Ensure Tesseract OCR is installed on your system and its path is set correctly
+# You can download it from: https://github.com/tesseract-ocr/tesseract
+
 def extract_sudoku(image_path):
-    # Read the image from the provided path.
-    image = cv2.imread(image_path)
-    # Convert the image to grayscale, which is necessary for thresholding.
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Apply adaptive thresholding to get a binary image which enhances the grid and digits.
-    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-    # Invert the image colors; this is to ensure digits are white on a black background, which is a common assumption in OCR.
-    invert = cv2.bitwise_not(thresh)
-    # Set custom configurations for Tesseract, instructing it to focus on digit recognition.
-    custom_config = r'--oem 3 --psm 6 outputbase digits'
-    # Perform OCR on the inverted image to extract text details.
-    details = pytesseract.image_to_data(invert, config=custom_config, output_type=Output.DICT)
-
-    # Initialize a list to hold the Sudoku grid as a 2D array filled with zeros.
-    n_boxes = len(details['text'])
-    sudoku_array = [[0 for _ in range(9)] for _ in range(9)]
-    # Determine the height and width of each cell in the grid.
-    height, width = invert.shape
-    cell_height = height // 9
-    cell_width = width // 9
-
-    # Iterate over all recognized text elements.
-    for i in range(n_boxes):
-        # Check if the OCR confidence is high enough to consider the text valid (greater than 10 in this case).
-        if int(details['conf'][i]) > 10:
-            # Extract the bounding box coordinates of the current text element.
-            (x, y, w, h) = (details['left'][i], details['top'][i], details['width'][i], details['height'][i])
-            # Calculate the row and column indices of the cell where the text is located.
-            row_idx = y // cell_height
-            col_idx = x // cell_width
-            # Strip the text of any whitespace and check if it is a digit.
-            text = details['text'][i].strip()
+    # Load the image in grayscale
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    
+    # Apply GaussianBlur to the image to remove noise
+    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+    
+    # Apply adaptive thresholding to get a binary image
+    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                   cv2.THRESH_BINARY_INV, 11, 2)
+    
+    # Find contours in the thresholded image
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Find the largest contour which should be the Sudoku board
+    largest_contour = max(contours, key=cv2.contourArea)
+    
+    # Get the bounding box of the largest contour
+    rect = cv2.minAreaRect(largest_contour)
+    box = cv2.boxPoints(rect)
+    box = np.int0(box)
+    
+    # Get the perspective transform for the Sudoku board
+    width = height = 450
+    dst_pts = np.array([[0, 0], [width-1, 0], [width-1, height-1], [0, height-1]], dtype='float32')
+    src_pts = np.array(box, dtype='float32')
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    warped = cv2.warpPerspective(image, M, (width, height))
+    
+    # Apply adaptive thresholding again to the warped image
+    warped_blurred = cv2.GaussianBlur(warped, (5, 5), 0)
+    warped_thresh = cv2.adaptiveThreshold(warped_blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                          cv2.THRESH_BINARY_INV, 11, 2)
+    
+    # Initialize the Sudoku board
+    board = np.zeros((9, 9), dtype=int)
+    
+    # Define the size of each cell
+    cell_size = width // 9
+    
+    # Iterate over each cell to extract the digits
+    for i in range(9):
+        for j in range(9):
+            # Get the cell region
+            cell = warped_thresh[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
+            
+            # Invert the cell colors for better OCR recognition
+            cell_inverted = cv2.bitwise_not(cell)
+            
+            # Use Tesseract OCR to recognize the digit
+            config = "--psm 10 -c tessedit_char_whitelist=0123456789"
+            text = pytesseract.image_to_string(cell_inverted, config=config, output_type=Output.STRING).strip()
+            
+            # If OCR recognized a digit, place it in the board
             if text.isdigit():
-                # If it is a digit, add it to the corresponding position in the Sudoku grid array.
-                sudoku_array[row_idx][col_idx] = int(text)
-
-    # Return the filled-in Sudoku grid array.
-    return sudoku_array
+                board[i, j] = int(text)
+    
+    return board.tolist()

@@ -1,6 +1,3 @@
-# Import the OCR function from the sudoku_ocr module.
-from sudoku_ocr import extract_sudoku
-
 # Define a function to check if a number already exists in the given row.
 def check_row(num, board, row_index):
     return num in board[row_index]
@@ -57,20 +54,3 @@ def solve_sudoku(board):
                 return board  # If the puzzle is solved, return the board.
             board[row][col] = 0  # Otherwise, reset the cell (backtrack).
     return False
-
-# Main function to interface with the user and solve the Sudoku puzzle.
-def Solver():
-    # Ask the user if they want to solve a puzzle from an image or a list of lists.
-    SolveType = input('Would you like to use an (I)mage or (L)ist of lists?: ').lower()
-    if SolveType == "l":
-        board = input('Enter your list of lists here: ')
-        board = eval(board)  # Convert the string input into a list of lists.
-        solve_sudoku(board)  # Solve the Sudoku puzzle.
-    elif SolveType == "i":
-        imagePath = input('Enter Image Path: ')
-        board = extract_sudoku(imagePath)  # Extract the Sudoku puzzle from the image.
-        solve_sudoku(board)  # Solve the Sudoku puzzle.
-    return board  # Return the solved board.
-
-# Print the result of the Solver function.
-print(Solver())
